@@ -34,9 +34,11 @@ window.SANTA_CONFIG = {
   // SHA-256 hash of the admin reset passcode (default: grinch2026).
   adminPasscodeHash: "c1635f27378dcc417bfff3e34938b6d0fbb6151f3d5b8826111983b9611bdc00",
 
-  // Background music (starts on the welcome screen). Set to null to use
-  // the built-in music-box Jingle Bells instead.
+  // Song that plays on the welcome screen (stops when people tap "Let me in").
   customAudio: "audio/sleigh-ride.mp3",
+
+  // Sound that plays when a name pops out of the box (ignores the mute button).
+  revealSound: "audio/fart.mp3",
 
   // The line shown under each person's name when someone draws them.
   messages: {

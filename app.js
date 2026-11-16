@@ -122,95 +122,62 @@ function avatar(name, size = "") {
 }
 
 /* ============================================================
-   SOUND — background song (starts on the welcome screen),
-   a reveal sound effect, and one mute switch for both.
+   SOUND — the song plays on the welcome screen only; the reveal
+   sound plays on every reveal, even if the song was muted.
    ============================================================ */
 const sound = (() => {
-  let muted = localStorage.getItem("santa-muted") === "1";
-  let ctx, song, synthTimer, synthOn = false;
-  const ensureCtx = () => {
-    try { ctx = ctx || new (window.AudioContext || window.webkitAudioContext)(); if (ctx.state === "suspended") ctx.resume(); } catch {}
-    return ctx;
-  };
+  let muted = false, onHome = true, primed = false;
+  const song = Object.assign(new Audio(CFG.customAudio), { loop: true, volume: 0.55, preload: "auto" });
+  const sfx = Object.assign(new Audio(CFG.revealSound), { preload: "auto", volume: 1 });
 
-  // built-in music-box Jingle Bells, only used if no customAudio is set
-  const N = { C4: 261.63, D4: 293.66, F4: 349.23, G4: 392, C5: 523.25, D5: 587.33, E5: 659.25, F5: 698.46, G5: 783.99 };
-  const S = [["E5",1],["E5",1],["E5",2],["E5",1],["E5",1],["E5",2],["E5",1],["G5",1],["C5",1.5],["D5",.5],["E5",4],
-    ["F5",1],["F5",1],["F5",1.5],["F5",.5],["F5",1],["E5",1],["E5",1],["E5",.5],["E5",.5],["E5",1],["D5",1],["D5",1],["E5",1],["D5",2],["G5",2],
-    ["E5",1],["E5",1],["E5",2],["E5",1],["E5",1],["E5",2],["E5",1],["G5",1],["C5",1.5],["D5",.5],["E5",4],
-    ["F5",1],["F5",1],["F5",1.5],["F5",.5],["F5",1],["E5",1],["E5",1],["E5",.5],["E5",.5],["G5",1],["G5",1],["F5",1],["D5",1],["C5",4],[null,2]];
-  const beat = 0.27;
-  function bell(f, t, dur, vol) {
-    [1, 2, 3.01].forEach((h, k) => {
-      const o = ctx.createOscillator(), g = ctx.createGain();
-      o.frequency.value = f * h;
-      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol / (k * 2.5 + 1), t + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.6);
-      o.connect(g).connect(ctx.destination); o.start(t); o.stop(t + dur + 0.7);
-    });
+  function playSong() {
+    if (muted || !onHome || !CFG.customAudio) return;
+    if (song.paused) song.play().catch(() => {}); // blocked until the first tap on most phones
   }
-  function synthLoop() {
-    const t = ctx.currentTime + 0.05; let total = 0;
-    S.forEach(([n, b]) => { if (n) bell(N[n], t + total * beat, b * beat, 0.11); total += b; });
-    synthTimer = setTimeout(() => synthOn && synthLoop(), total * beat * 1000 - 60);
+  // Phones only let a page play sound after a tap. The reveal happens a few
+  // seconds after the tap, so unlock the sound effect silently on the first tap.
+  function prime() {
+    if (primed || !CFG.revealSound) return; primed = true;
+    sfx.muted = true;
+    sfx.play().then(() => { sfx.pause(); sfx.currentTime = 0; sfx.muted = false; })
+      .catch(() => { sfx.muted = false; primed = false; });
   }
-
-  function playMusic() {
-    if (muted) return;
-    if (CFG.customAudio) {
-      song = song || Object.assign(new Audio(CFG.customAudio), { loop: true, volume: 0.55, preload: "auto" });
-      if (song.paused) song.play().catch(() => {}); // blocked until first tap; retried on every tap
-    } else if (!synthOn && ensureCtx()) { synthOn = true; synthLoop(); }
+  function reveal() {
+    if (!CFG.revealSound) return;
+    try { sfx.pause(); sfx.currentTime = 0; sfx.muted = false; sfx.play().catch(() => {}); } catch {}
   }
-  function stopMusic() { song?.pause(); synthOn = false; clearTimeout(synthTimer); }
-
-  // A wet, sputtering fart, synthesized on the spot (no file needed).
-  // Ignores the mute button on purpose: the mute only silences the music.
-  function fart() {
-    if (!ensureCtx()) return; // plays even when the music is muted
-    const sr = ctx.sampleRate, dur = 1.15, n = Math.floor(sr * dur);
-    const buf = ctx.createBuffer(1, n, sr), d = buf.getChannelData(0);
-    const bursts = [[0, 0.3], [0.34, 0.52], [0.56, 1.12]];
-    let ph = 0, wet = 0, jit = 0;
-    for (let i = 0; i < n; i++) {
-      const t = i / sr;
-      let env = 0;
-      for (const [a, b] of bursts) if (t >= a && t < b) { const x = (t - a) / (b - a); env = Math.min(1, x * 30) * Math.pow(1 - x, 0.5); }
-      jit += 0.002 * ((Math.random() * 2 - 1) * 60 - jit);
-      const f = 100 - 50 * (t / dur) + 14 * Math.sin(2 * Math.PI * 6.5 * t) + jit;
-      ph += f / sr;
-      const buzz = Math.tanh(5 * Math.sin(2 * Math.PI * ph)) * (0.65 + 0.35 * Math.sin(2 * Math.PI * 33 * t));
-      wet += 0.2 * ((Math.random() * 2 - 1) - wet);
-      const bubbles = Math.sin(2 * Math.PI * ph * 0.5) > 0.2 ? 1.6 : 0.25;
-      d[i] = env * (0.7 * buzz + wet * bubbles) * 0.55;
-    }
-    const src = ctx.createBufferSource(); src.buffer = buf;
-    const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 850; lp.Q.value = 5;
-    const g = ctx.createGain(); g.gain.value = 1;
-    src.connect(lp).connect(g).connect(ctx.destination); src.start();
-    if (song && !song.paused) { song.volume = 0.15; setTimeout(() => { song.volume = 0.55; }, 1400); }
+  function leaveHome() {
+    onHome = false;
+    $("musicBtn").classList.add("hidden");
+    if (song.paused) return;
+    const start = song.volume, t0 = performance.now();
+    const step = (t) => {
+      const k = Math.min(1, (t - t0) / 700);
+      song.volume = start * (1 - k);
+      k < 1 ? requestAnimationFrame(step) : song.pause();
+    };
+    requestAnimationFrame(step);
   }
-
   function syncButton() {
     const b = $("musicBtn");
     b.classList.toggle("muted", muted);
-    b.setAttribute("aria-label", muted ? "Turn sound on" : "Turn sound off");
+    b.setAttribute("aria-label", muted ? "Turn music on" : "Turn music off");
   }
   return {
     init() {
       syncButton();
-      playMusic(); // works if the browser allows autoplay
-      // otherwise start on the first tap anywhere (every browser requires a tap)
-      const unlock = (e) => { if (e.target.closest?.("#musicBtn")) return; ensureCtx(); playMusic(); };
+      playSong(); // starts right away wherever the browser allows it
+      const unlock = (e) => { prime(); if (!e.target.closest?.("#musicBtn")) playSong(); };
       document.addEventListener("pointerdown", unlock, true);
       document.addEventListener("keydown", unlock, true);
       $("musicBtn").onclick = () => {
-        muted = !muted; localStorage.setItem("santa-muted", muted ? "1" : "0");
-        muted ? stopMusic() : (ensureCtx(), playMusic());
+        muted = !muted;
+        muted ? song.pause() : playSong();
         syncButton();
       };
     },
-    fart,
+    reveal,
+    leaveHome,
   };
 })();
 
@@ -373,7 +340,7 @@ async function playReveal(recipient, { fresh }) {
   $("facePop").innerHTML = ""; $("facePop").appendChild(avatar(recipient, "xl"));
   g.className = "gift open";
   await sleep(450);
-  confetti(); sound.fart();
+  confetti(); sound.reveal();
   await sleep(900);
   g.className = "gift open opened";
   $("revealName").textContent = recipient + "!";
@@ -500,6 +467,7 @@ async function boot() {
   };
 
   $("enterBtn").onclick = () => {
+    sound.leaveHome();
     $("adminBtn").classList.remove("hidden");
     $("welcome").classList.add("leaving");
     $("app").classList.remove("hidden");

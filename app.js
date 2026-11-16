@@ -83,20 +83,14 @@ async function firebaseStore() {
    COPY — the comedy department
    ============================================================ */
 const LOADING = [
-  "manifesting your giftee…",
-  "santa is cooking… let him cook…",
-  "asking the elves for the tea…",
-  "the box is buffering…",
-  "checking the list. checking it twice…",
-  "no thoughts, just vibes…",
-  "rudolph is being so real right now…",
+  "Consulting the elves' HR department…",
+  "Bribing Rudolph with carrots…",
+  "Shaking the box suspiciously…",
+  "Checking the list. Checking it twice…",
+  "Asking Mrs. Claus, she actually runs things…",
+  "Untangling the lights…",
 ];
-const CONFIRM = [
-  "be so fr right now.",
-  "lying to santa is not the move.",
-  "santa has your screen time. just saying.",
-];
-const PAST_TAG = ["already drew ✓", "already drew ✓", "already drew ✓"];
+const PAST_TAG = ["drew already ✓", "already sorted ✓", "done & dusted ✓"];
 
 /* ============================================================
    AVATARS — faces/<name>.png, then .jpg, then a cute fallback
@@ -277,10 +271,10 @@ function renderChecklist() {
   });
   const left = NAMES.length - count;
   $("sideFoot").textContent =
-    left === 0 ? "🎉 everyone's drawn. it's giving organized."
-    : left === 1 ? "one person left. we see you 👀"
-    : count === 0 ? "nobody's drawn yet. who's gonna be brave?"
-    : `${left} people are lowkey procrastinating.`;
+    left === 0 ? "🎉 Everyone's drawn! Let the shopping panic begin."
+    : left === 1 ? "One straggler left. We see you. 👀"
+    : count === 0 ? "Nobody yet. Someone be brave."
+    : `${left} people still procrastinating.`;
 }
 
 function renderNameGrid() {
@@ -316,13 +310,12 @@ function confirmMe(name) {
   showModal((c) => {
     c.append(
       avatar(name, "xl"),
-      el("h3", { textContent: `So you're ${name}?` }),
-      el("p", { textContent: pick(CONFIRM) }),
+      el("h3", { textContent: `So you're ${name}?`, style: "margin-bottom:18px" }),
     );
     const row = el("div", { className: "row" });
     row.append(
-      el("button", { className: "btn btn-ghost", textContent: "nah, wrong person", onclick: hideModal }),
-      el("button", { className: "btn btn-red", textContent: "yep, it's me", onclick: () => { hideModal(); goDraw(name); } }),
+      el("button", { className: "btn btn-ghost", textContent: "No, wrong person", onclick: hideModal }),
+      el("button", { className: "btn btn-red", textContent: "Yep, it's me", onclick: () => { hideModal(); goDraw(name); } }),
     );
     c.append(row);
   });
@@ -348,10 +341,10 @@ function goDraw(name) {
   me = name;
   $("stepWho").classList.add("hidden");
   $("stepDraw").classList.remove("hidden");
-  $("drawHello").textContent = `hi ${name}! 👋`;
+  $("drawHello").textContent = `Hi ${name}! 👋`;
   $("drawSub").classList.add("hidden");
   resetGift();
-  $("openBtn").textContent = "✨ open the box"; $("openBtn").onclick = openBox;
+  $("openBtn").textContent = "✨ Open the box"; $("openBtn").onclick = openBox;
   $("openBtn").classList.remove("hidden"); $("openBtn").disabled = false;
   $("replayBtn").classList.add("hidden");
   $("backBtn").classList.remove("hidden");
@@ -410,19 +403,19 @@ async function openBox() {
     $("openBtn").disabled = false; $("backBtn").classList.remove("hidden");
     $("loadingLine").textContent = "";
     const msg = err.message === "already"
-      ? `someone already drew as ${me}. if that wasn't you, text the organizer for a reset.`
-      : "the elves fumbled the box (the wifi said no). try again?";
-    showModal((c) => c.append(el("div", { textContent: "🙀", style: "font-size:3rem" }), el("h3", { textContent: "uh oh" }), el("p", { textContent: msg }),
+      ? `Someone already drew as ${me}. If that wasn't you, text the organizer for a reset.`
+      : "The elves dropped the box (network hiccup). Try again?";
+    showModal((c) => c.append(el("div", { textContent: "🙀", style: "font-size:3rem" }), el("h3", { textContent: "Uh oh" }), el("p", { textContent: msg }),
       el("button", { className: "btn btn-red", textContent: "OK", onclick: () => { hideModal(); if (err.message === "already") goWho(); } })));
   } finally { busy = false; }
 }
 
 function showMine(m) {
   goDraw(m.me);
-  $("drawHello").textContent = `welcome back, ${m.me} 🎄`;
-  $("drawSub").textContent = "you already drew. forgot who? we don't judge (we do).";
+  $("drawHello").textContent = `Welcome back, ${m.me}! 🎄`;
+  $("drawSub").textContent = "You've already drawn. Need a reminder? Open it again.";
   $("drawSub").classList.remove("hidden");
-  $("openBtn").textContent = "🎁 remind me who i got";
+  $("openBtn").textContent = "🎁 Remind me who I got";
   $("openBtn").onclick = async () => {
     $("openBtn").disabled = true;
     const g = $("gift"); g.className = "gift shaking"; await sleep(900);
@@ -438,20 +431,20 @@ async function sha256(s) {
 }
 function openAdmin() {
   showModal((c) => {
-    const inp = el("input", { type: "password", placeholder: "secret passcode", autocomplete: "off" });
+    const inp = el("input", { type: "password", placeholder: "Secret passcode", autocomplete: "off" });
     const err = el("p", { className: "err", textContent: "" });
     const go = async () => {
-      if ((await sha256(inp.value.trim())) !== CFG.adminPasscodeHash) { err.textContent = "nope. nice try, grinch."; return; }
+      if ((await sha256(inp.value.trim())) !== CFG.adminPasscodeHash) { err.textContent = "Nope. Nice try, Grinch."; return; }
       showModal((c2) => {
         c2.append(
           el("div", { textContent: "🧨", style: "font-size:3rem" }),
-          el("h3", { textContent: "reset everything?" }),
-          el("p", { textContent: "this wipes every draw and everyone draws again. you still won't see who got who." }),
+          el("h3", { textContent: "Reset everything?" }),
+          el("p", { textContent: "Wipes every draw so the whole group starts over. Everyone will need to draw again. You still won't see who had whom." }),
         );
         const row = el("div", { className: "row" });
         row.append(
-          el("button", { className: "btn btn-ghost", textContent: "never mind", onclick: hideModal }),
-          el("button", { className: "btn btn-red", textContent: "yes, nuke it", onclick: async (e) => {
+          el("button", { className: "btn btn-ghost", textContent: "Never mind", onclick: hideModal }),
+          el("button", { className: "btn btn-red", textContent: "Yes, nuke it", onclick: async (e) => {
             e.target.disabled = true; e.target.textContent = "Resetting…";
             try { await store.reset(); saveMine(null); hideModal(); goWho(); }
             catch { e.target.textContent = "Failed, try again"; e.target.disabled = false; }
@@ -463,10 +456,10 @@ function openAdmin() {
     inp.addEventListener("keydown", (e) => e.key === "Enter" && go());
     c.append(
       el("div", { textContent: "🔧", style: "font-size:3rem" }),
-      el("h3", { textContent: "santa's control room" }),
-      el("p", { textContent: "organizer only. elves, look away." }),
+      el("h3", { textContent: "Santa's control room" }),
+      el("p", { textContent: "Organizer only. Elves, look away." }),
       inp, err,
-      el("button", { className: "btn btn-green", textContent: "enter", onclick: go }),
+      el("button", { className: "btn btn-green", textContent: "Enter", onclick: go }),
     );
     setTimeout(() => inp.focus(), 50);
   });

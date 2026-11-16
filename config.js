@@ -14,7 +14,14 @@ window.SANTA_CONFIG = {
   // Paste your Firebase web config here (see README.md, step 1).
   // While this is null the site runs in DEMO MODE: draws are only
   // saved in your own browser, so you can click around and test.
-  firebase: null,
+  firebase: {
+    apiKey: "AIzaSyDcNpCaNiu_VFi4F_CbQM65vj26rFcnpqQ",
+    authDomain: "secretsanta26-59368.firebaseapp.com",
+    projectId: "secretsanta26-59368",
+    storageBucket: "secretsanta26-59368.firebasestorage.app",
+    messagingSenderId: "377117986683",
+    appId: "1:377117986683:web:eeac6507e1ccca7f3f77de",
+  },
   // firebase: {
   //   apiKey: "...",
   //   authDomain: "...",

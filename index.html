@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Secret Santa</title>
+  <meta property="og:title" content="🎁 Secret Santa drawing" />
+  <meta property="og:description" content="Tap to find out who you're shopping for. Tell no one." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎁</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="snow" aria-hidden="true"></div>
+
+  <!-- ============ WELCOME ============ -->
+  <section id="welcome" class="welcome">
+    <div class="welcome-inner">
+      <div class="welcome-emoji">🎅</div>
+      <p class="welcome-kicker">ok bestie, you've been summoned to</p>
+      <h1 class="welcome-title" id="welcomeTitle"></h1>
+      <p class="welcome-sub">Gifts will be exchanged. Secrets will be kept.</p>
+      <button id="enterBtn" class="btn btn-big btn-red">🎁 let me in fr</button>
+      <p class="welcome-fine">by entering you agree to absolutely nothing. no cap.</p>
+    </div>
+  </section>
+
+  <!-- ============ APP ============ -->
+  <div id="app" class="app hidden">
+    <header class="top">
+      <h1 class="title" id="appTitle"></h1>
+      <span id="demoBadge" class="badge hidden">Demo mode · only saved on this device</span>
+    </header>
+
+    <div class="layout">
+      <main class="card main-card">
+        <!-- Step 1: who are you -->
+        <div id="stepWho" class="step">
+          <h2>first things first… who are you?</h2>
+          <p class="muted">pick <em>yourself</em>. catfishing santa is crazy work.</p>
+          <div id="nameGrid" class="name-grid"></div>
+        </div>
+
+        <!-- Step 2: draw -->
+        <div id="stepDraw" class="step hidden">
+          <h2 id="drawHello"></h2>
+          <p class="muted hidden" id="drawSub"></p>
+
+          <div class="stage">
+            <div id="gift" class="gift">
+              <div class="face-pop" id="facePop"></div>
+              <div class="lid"><div class="bow"><span></span><span></span></div></div>
+              <div class="box"></div>
+            </div>
+            <div id="confetti" class="confetti"></div>
+          </div>
+
+          <p id="loadingLine" class="loading-line"></p>
+
+          <div id="revealText" class="reveal hidden">
+            <p class="reveal-kicker">you're shopping for…</p>
+            <p class="reveal-name" id="revealName"></p>
+            <p class="reveal-joke" id="revealJoke"></p>
+            <div class="whisper">🤫 screenshot this and <strong>gatekeep it</strong>. leaking = instant coal. it's saved on this phone too, but santa's memory is kinda mid.</div>
+          </div>
+
+          <div class="actions">
+            <button id="openBtn" class="btn btn-big btn-red">✨ open the box</button>
+            <button id="replayBtn" class="btn btn-ghost hidden">🔁 run it back</button>
+            <button id="backBtn" class="btn btn-link">← wait that's not me</button>
+          </div>
+        </div>
+      </main>
+
+      <!-- Checklist -->
+      <aside class="card side-card" id="sideCard">
+        <button class="side-head" id="sideToggle" aria-expanded="false">
+          <span>🎄 who's drawn</span>
+          <span class="progress-pill" id="progressPill">0/11</span>
+        </button>
+        <div class="progress-bar"><div id="progressFill"></div></div>
+        <ul id="checklist" class="checklist"></ul>
+        <p class="side-foot" id="sideFoot"></p>
+      </aside>
+    </div>
+
+  </div>
+
+  <!-- Organizer reset (faint) -->
+  <button id="adminBtn" class="admin-btn hidden" title="santa's control room" aria-label="Organizer reset">🔧</button>
+
+  <!-- Sound toggle -->
+  <button id="musicBtn" class="music-btn" aria-label="Turn sound off">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M11 5 6 9H3v6h3l5 4V5z" fill="currentColor" stroke="none"/>
+      <g class="on"><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></g>
+      <g class="off"><path d="m16 9 6 6"/><path d="m22 9-6 6"/></g>
+    </svg>
+  </button>
+
+  <!-- ============ MODAL ============ -->
+  <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card" id="modalCard"></div>
+  </div>
+
+  <script src="config.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

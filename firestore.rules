@@ -1,0 +1,16 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Only one document exists: who has drawn + which names are taken.
+    match /santa/state {
+      allow read: if true;
+      allow write: if request.resource.data.keys().hasOnly(['drawn', 'taken', 'round'])
+                   && request.resource.data.drawn is map
+                   && request.resource.data.taken is map
+                   && request.resource.data.round is int;
+    }
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

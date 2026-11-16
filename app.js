@@ -1,0 +1,515 @@
+const CFG = window.SANTA_CONFIG;
+const NAMES = CFG.names;
+const $ = (id) => document.getElementById(id);
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const LS_KEY = "santa-mine-v1";
+
+/* ============================================================
+   STORAGE — Firebase if configured, otherwise local demo mode.
+   Only two sets are stored: who HAS drawn, and which names are
+   TAKEN. Never who drew whom, so the organizer can't peek.
+   ============================================================ */
+
+// Is the state still completable? With n >= 2 names left it always is;
+// it only breaks when the last person left is the last name left.
+function feasible(givers, recips) {
+  return !(givers.length === 1 && recips.length === 1 && givers[0] === recips[0]);
+}
+
+function chooseRecipient(state, me) {
+  const drawn = state.drawn || {}, taken = state.taken || {};
+  if (drawn[me]) throw new Error("already");
+  const giversLeft = NAMES.filter((n) => !drawn[n] && n !== me);
+  const options = NAMES.filter((n) => n !== me && !taken[n]).filter((c) =>
+    feasible(giversLeft, NAMES.filter((n) => !taken[n] && n !== c))
+  );
+  if (!options.length) throw new Error("stuck");
+  return pick(options);
+}
+
+function emptyState(round = 1) { return { drawn: {}, taken: {}, round }; }
+
+function localStore() {
+  const KEY = "santa-demo-state";
+  const read = () => { try { return JSON.parse(localStorage.getItem(KEY)) || emptyState(); } catch { return emptyState(); } };
+  const write = (s) => { localStorage.setItem(KEY, JSON.stringify(s)); listeners.forEach((f) => f(s)); };
+  const listeners = [];
+  window.addEventListener("storage", (e) => { if (e.key === KEY) listeners.forEach((f) => f(read())); });
+  return {
+    demo: true,
+    subscribe(f) { listeners.push(f); f(read()); },
+    async draw(me) {
+      const s = read(); const r = chooseRecipient(s, me);
+      s.drawn[me] = true; s.taken[r] = true; write(s); return { recipient: r, round: s.round };
+    },
+    async reset() { write(emptyState((read().round || 1) + 1)); },
+  };
+}
+
+async function firebaseStore() {
+  const V = "10.12.2";
+  const { initializeApp } = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-app.js`);
+  const fs = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-firestore.js`);
+  const app = initializeApp(CFG.firebase);
+  const db = fs.getFirestore(app);
+  const ref = fs.doc(db, "santa", "state");
+  return {
+    demo: false,
+    subscribe(f) { fs.onSnapshot(ref, (snap) => f(snap.exists() ? snap.data() : emptyState())); },
+    async draw(me) {
+      return fs.runTransaction(db, async (t) => {
+        const snap = await t.get(ref);
+        const s = snap.exists() ? snap.data() : emptyState();
+        const r = chooseRecipient(s, me);
+        t.set(ref, {
+          drawn: { ...(s.drawn || {}), [me]: true },
+          taken: { ...(s.taken || {}), [r]: true },
+          round: s.round || 1,
+        });
+        return { recipient: r, round: s.round || 1 };
+      });
+    },
+    async reset() {
+      await fs.runTransaction(db, async (t) => {
+        const snap = await t.get(ref);
+        t.set(ref, emptyState(((snap.exists() && snap.data().round) || 1) + 1));
+      });
+    },
+  };
+}
+
+/* ============================================================
+   COPY — the comedy department
+   ============================================================ */
+const LOADING = [
+  "manifesting your giftee…",
+  "santa is cooking… let him cook…",
+  "asking the elves for the tea…",
+  "the box is buffering…",
+  "checking the list. checking it twice…",
+  "no thoughts, just vibes…",
+  "rudolph is being so real right now…",
+];
+const CONFIRM = [
+  "be so fr right now.",
+  "lying to santa is not the move.",
+  "santa has your screen time. just saying.",
+];
+const PAST_TAG = ["already drew ✓", "already drew ✓", "already drew ✓"];
+
+/* ============================================================
+   AVATARS — faces/<name>.png, then .jpg, then a cute fallback
+   ============================================================ */
+const COLORS = ["#e0364a", "#1f8a5b", "#d98a1c", "#3a7bd5", "#9b4fd1", "#d6457f", "#1aa6a6", "#7a5b3a"];
+const faceCache = {};
+function findFace(name) {
+  if (faceCache[name]) return faceCache[name];
+  const base = `faces/${name.toLowerCase()}`;
+  const exts = [".png", ".jpg", ".jpeg", ".webp"];
+  return (faceCache[name] = new Promise((resolve) => {
+    let i = 0; const img = new Image();
+    img.onload = () => resolve(img.src);
+    img.onerror = () => (++i < exts.length ? (img.src = base + exts[i]) : resolve(null));
+    img.src = base + exts[0];
+  }));
+}
+function avatar(name, size = "") {
+  const el = document.createElement("div");
+  el.className = `avatar ${size}`;
+  el.style.setProperty("--c", COLORS[NAMES.indexOf(name) % COLORS.length]);
+  el.textContent = name[0];
+  findFace(name).then((src) => {
+    if (!src) return;
+    const img = new Image(); img.alt = name; img.src = src;
+    el.textContent = ""; el.classList.add("photo"); el.appendChild(img);
+  });
+  return el;
+}
+
+/* ============================================================
+   SOUND — background song (starts on the welcome screen),
+   a reveal sound effect, and one mute switch for both.
+   ============================================================ */
+const sound = (() => {
+  let muted = localStorage.getItem("santa-muted") === "1";
+  let ctx, song, synthTimer, synthOn = false;
+  const ensureCtx = () => {
+    try { ctx = ctx || new (window.AudioContext || window.webkitAudioContext)(); if (ctx.state === "suspended") ctx.resume(); } catch {}
+    return ctx;
+  };
+
+  // built-in music-box Jingle Bells, only used if no customAudio is set
+  const N = { C4: 261.63, D4: 293.66, F4: 349.23, G4: 392, C5: 523.25, D5: 587.33, E5: 659.25, F5: 698.46, G5: 783.99 };
+  const S = [["E5",1],["E5",1],["E5",2],["E5",1],["E5",1],["E5",2],["E5",1],["G5",1],["C5",1.5],["D5",.5],["E5",4],
+    ["F5",1],["F5",1],["F5",1.5],["F5",.5],["F5",1],["E5",1],["E5",1],["E5",.5],["E5",.5],["E5",1],["D5",1],["D5",1],["E5",1],["D5",2],["G5",2],
+    ["E5",1],["E5",1],["E5",2],["E5",1],["E5",1],["E5",2],["E5",1],["G5",1],["C5",1.5],["D5",.5],["E5",4],
+    ["F5",1],["F5",1],["F5",1.5],["F5",.5],["F5",1],["E5",1],["E5",1],["E5",.5],["E5",.5],["G5",1],["G5",1],["F5",1],["D5",1],["C5",4],[null,2]];
+  const beat = 0.27;
+  function bell(f, t, dur, vol) {
+    [1, 2, 3.01].forEach((h, k) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.value = f * h;
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol / (k * 2.5 + 1), t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.6);
+      o.connect(g).connect(ctx.destination); o.start(t); o.stop(t + dur + 0.7);
+    });
+  }
+  function synthLoop() {
+    const t = ctx.currentTime + 0.05; let total = 0;
+    S.forEach(([n, b]) => { if (n) bell(N[n], t + total * beat, b * beat, 0.11); total += b; });
+    synthTimer = setTimeout(() => synthOn && synthLoop(), total * beat * 1000 - 60);
+  }
+
+  function playMusic() {
+    if (muted) return;
+    if (CFG.customAudio) {
+      song = song || Object.assign(new Audio(CFG.customAudio), { loop: true, volume: 0.55, preload: "auto" });
+      if (song.paused) song.play().catch(() => {}); // blocked until first tap; retried on every tap
+    } else if (!synthOn && ensureCtx()) { synthOn = true; synthLoop(); }
+  }
+  function stopMusic() { song?.pause(); synthOn = false; clearTimeout(synthTimer); }
+
+  // A wet, sputtering fart, synthesized on the spot (no file needed).
+  function fart() {
+    if (muted || !ensureCtx()) return;
+    const sr = ctx.sampleRate, dur = 1.15, n = Math.floor(sr * dur);
+    const buf = ctx.createBuffer(1, n, sr), d = buf.getChannelData(0);
+    const bursts = [[0, 0.3], [0.34, 0.52], [0.56, 1.12]];
+    let ph = 0, wet = 0, jit = 0;
+    for (let i = 0; i < n; i++) {
+      const t = i / sr;
+      let env = 0;
+      for (const [a, b] of bursts) if (t >= a && t < b) { const x = (t - a) / (b - a); env = Math.min(1, x * 30) * Math.pow(1 - x, 0.5); }
+      jit += 0.002 * ((Math.random() * 2 - 1) * 60 - jit);
+      const f = 100 - 50 * (t / dur) + 14 * Math.sin(2 * Math.PI * 6.5 * t) + jit;
+      ph += f / sr;
+      const buzz = Math.tanh(5 * Math.sin(2 * Math.PI * ph)) * (0.65 + 0.35 * Math.sin(2 * Math.PI * 33 * t));
+      wet += 0.2 * ((Math.random() * 2 - 1) - wet);
+      const bubbles = Math.sin(2 * Math.PI * ph * 0.5) > 0.2 ? 1.6 : 0.25;
+      d[i] = env * (0.7 * buzz + wet * bubbles) * 0.55;
+    }
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 850; lp.Q.value = 5;
+    const g = ctx.createGain(); g.gain.value = 1;
+    src.connect(lp).connect(g).connect(ctx.destination); src.start();
+    if (song && !song.paused) { song.volume = 0.15; setTimeout(() => { song.volume = 0.55; }, 1400); }
+  }
+
+  function syncButton() {
+    const b = $("musicBtn");
+    b.classList.toggle("muted", muted);
+    b.setAttribute("aria-label", muted ? "Turn sound on" : "Turn sound off");
+  }
+  return {
+    init() {
+      syncButton();
+      playMusic(); // works if the browser allows autoplay
+      // otherwise start on the first tap anywhere (every browser requires a tap)
+      const unlock = (e) => { if (e.target.closest?.("#musicBtn")) return; ensureCtx(); playMusic(); };
+      document.addEventListener("pointerdown", unlock, true);
+      document.addEventListener("keydown", unlock, true);
+      $("musicBtn").onclick = () => {
+        muted = !muted; localStorage.setItem("santa-muted", muted ? "1" : "0");
+        muted ? stopMusic() : (ensureCtx(), playMusic());
+        syncButton();
+      };
+    },
+    fart,
+  };
+})();
+
+/* ============================================================
+   UI
+   ============================================================ */
+let store, state = emptyState(), me = null, busy = false;
+
+function mine() { try { return JSON.parse(localStorage.getItem(LS_KEY)); } catch { return null; } }
+function saveMine(v) { v ? localStorage.setItem(LS_KEY, JSON.stringify(v)) : localStorage.removeItem(LS_KEY); }
+
+function makeSnow() {
+  const box = $("snow"); const n = innerWidth < 600 ? 28 : 55;
+  for (let i = 0; i < n; i++) {
+    const f = document.createElement("span");
+    f.className = "flake"; f.textContent = pick(["❄", "❅", "•", "•", "❆"]);
+    f.style.left = Math.random() * 100 + "vw";
+    f.style.fontSize = 8 + Math.random() * 16 + "px";
+    f.style.animationDuration = 7 + Math.random() * 10 + "s";
+    f.style.animationDelay = -Math.random() * 15 + "s";
+    f.style.setProperty("--drift", (Math.random() * 80 - 40) + "px");
+    box.appendChild(f);
+  }
+}
+
+function setTitle() {
+  document.title = CFG.title;
+  $("appTitle").textContent = CFG.title;
+  // split by grapheme so emoji stay whole; keep words together so they don't break mid-word
+  const graphemes = (t) => window.Intl?.Segmenter ? [...new Intl.Segmenter().segment(t)].map((x) => x.segment) : [...t];
+  const h = $("welcomeTitle"); h.innerHTML = "";
+  let i = 0;
+  CFG.title.split(" ").forEach((word, wi) => {
+    if (wi) h.append(" ");
+    const w = document.createElement("span"); w.className = "word";
+    graphemes(word).forEach((ch) => {
+      const s = document.createElement("span");
+      s.className = "ch"; s.textContent = ch;
+      s.style.animationDelay = 0.3 + i++ * 0.035 + "s";
+      w.appendChild(s);
+    });
+    h.appendChild(w);
+  });
+}
+
+function renderChecklist() {
+  const drawn = state.drawn || {};
+  const count = NAMES.filter((n) => drawn[n]).length;
+  $("progressPill").textContent = `${count}/${NAMES.length}`;
+  $("progressFill").style.width = (count / NAMES.length) * 100 + "%";
+  const ul = $("checklist"); ul.innerHTML = "";
+  NAMES.forEach((n) => {
+    const li = document.createElement("li");
+    li.className = drawn[n] ? "done" : "";
+    li.appendChild(avatar(n, "sm"));
+    const w = document.createElement("span"); w.className = "who"; w.textContent = n; li.appendChild(w);
+    const m = document.createElement("span"); m.className = "mark"; m.textContent = drawn[n] ? "✓" : ""; li.appendChild(m);
+    ul.appendChild(li);
+  });
+  const left = NAMES.length - count;
+  $("sideFoot").textContent =
+    left === 0 ? "🎉 everyone's drawn. it's giving organized."
+    : left === 1 ? "one person left. we see you 👀"
+    : count === 0 ? "nobody's drawn yet. who's gonna be brave?"
+    : `${left} people are lowkey procrastinating.`;
+}
+
+function renderNameGrid() {
+  const drawn = state.drawn || {};
+  const grid = $("nameGrid"); grid.innerHTML = "";
+  NAMES.forEach((n, i) => {
+    const b = document.createElement("button");
+    b.className = "name-bubble"; b.style.animationDelay = i * 0.04 + "s";
+    b.appendChild(avatar(n));
+    const s = document.createElement("span"); s.className = "nm"; s.textContent = n; b.appendChild(s);
+    if (drawn[n]) {
+      b.disabled = true;
+      const t = document.createElement("span"); t.className = "tag"; t.textContent = PAST_TAG[i % 3]; b.appendChild(t);
+    }
+    b.onclick = () => confirmMe(n);
+    grid.appendChild(b);
+  });
+}
+
+function showModal(build) {
+  const card = $("modalCard"); card.innerHTML = ""; build(card);
+  $("modal").classList.remove("hidden");
+}
+function hideModal() { $("modal").classList.add("hidden"); }
+$("modal").addEventListener("click", (e) => { if (e.target.id === "modal") hideModal(); });
+
+function el(tag, props = {}, ...kids) {
+  const e = Object.assign(document.createElement(tag), props);
+  kids.forEach((k) => e.append(k)); return e;
+}
+
+function confirmMe(name) {
+  showModal((c) => {
+    c.append(
+      avatar(name, "xl"),
+      el("h3", { textContent: `So you're ${name}?` }),
+      el("p", { textContent: pick(CONFIRM) }),
+    );
+    const row = el("div", { className: "row" });
+    row.append(
+      el("button", { className: "btn btn-ghost", textContent: "nah, wrong person", onclick: hideModal }),
+      el("button", { className: "btn btn-red", textContent: "yep, it's me", onclick: () => { hideModal(); goDraw(name); } }),
+    );
+    c.append(row);
+  });
+}
+
+function resetGift() {
+  const g = $("gift");
+  g.className = "gift idle";
+  $("facePop").innerHTML = "";
+  $("confetti").innerHTML = "";
+  $("revealText").classList.add("hidden");
+  $("loadingLine").textContent = "";
+}
+
+function goWho() {
+  me = null;
+  $("stepDraw").classList.add("hidden");
+  $("stepWho").classList.remove("hidden");
+  renderNameGrid();
+}
+
+function goDraw(name) {
+  me = name;
+  $("stepWho").classList.add("hidden");
+  $("stepDraw").classList.remove("hidden");
+  $("drawHello").textContent = `hi ${name}! 👋`;
+  $("drawSub").classList.add("hidden");
+  resetGift();
+  $("openBtn").textContent = "✨ open the box"; $("openBtn").onclick = openBox;
+  $("openBtn").classList.remove("hidden"); $("openBtn").disabled = false;
+  $("replayBtn").classList.add("hidden");
+  $("backBtn").classList.remove("hidden");
+}
+
+function confetti() {
+  const box = $("confetti");
+  const cols = ["#e0364a", "#1f8a5b", "#f6c453", "#ffffff", "#3a7bd5"];
+  for (let i = 0; i < 70; i++) {
+    const p = document.createElement("i");
+    const a = Math.random() * Math.PI - Math.PI; // upward half
+    const d = 120 + Math.random() * 220;
+    p.style.background = pick(cols);
+    p.style.setProperty("--x", Math.cos(a) * d * 1.4 + "px");
+    p.style.setProperty("--y", Math.sin(a) * d + 160 * Math.random() + "px");
+    p.style.setProperty("--r", Math.random() * 720 - 360 + "deg");
+    p.style.animationDelay = Math.random() * 0.15 + "s";
+    if (Math.random() > 0.5) p.style.borderRadius = "50%";
+    box.appendChild(p);
+  }
+}
+
+async function playReveal(recipient, { fresh }) {
+  const g = $("gift");
+  $("facePop").innerHTML = ""; $("facePop").appendChild(avatar(recipient, "xl"));
+  g.className = "gift open";
+  await sleep(450);
+  confetti(); sound.fart();
+  await sleep(900);
+  g.className = "gift open opened";
+  $("revealName").textContent = recipient + "!";
+  $("revealJoke").textContent = (CFG.messages || {})[recipient] || "";
+  $("revealText").classList.remove("hidden");
+  $("loadingLine").textContent = "";
+  $("openBtn").classList.add("hidden");
+  $("replayBtn").classList.remove("hidden");
+  $("backBtn").classList.add("hidden");
+  if (fresh) $("revealText").scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+async function openBox() {
+  if (busy || !me) return;
+  busy = true; $("openBtn").disabled = true; $("backBtn").classList.add("hidden");
+  const g = $("gift"); g.className = "gift shaking";
+  let li = 0; const order = [...LOADING].sort(() => Math.random() - 0.5);
+  $("loadingLine").textContent = order[0];
+  const ticker = setInterval(() => { $("loadingLine").textContent = order[++li % order.length]; }, 900);
+  try {
+    const [res] = await Promise.all([store.draw(me), sleep(2200)]);
+    saveMine({ me, recipient: res.recipient, round: res.round });
+    clearInterval(ticker);
+    await playReveal(res.recipient, { fresh: true });
+  } catch (err) {
+    clearInterval(ticker);
+    g.className = "gift idle";
+    $("openBtn").disabled = false; $("backBtn").classList.remove("hidden");
+    $("loadingLine").textContent = "";
+    const msg = err.message === "already"
+      ? `someone already drew as ${me}. if that wasn't you, text the organizer for a reset.`
+      : "the elves fumbled the box (the wifi said no). try again?";
+    showModal((c) => c.append(el("div", { textContent: "🙀", style: "font-size:3rem" }), el("h3", { textContent: "uh oh" }), el("p", { textContent: msg }),
+      el("button", { className: "btn btn-red", textContent: "OK", onclick: () => { hideModal(); if (err.message === "already") goWho(); } })));
+  } finally { busy = false; }
+}
+
+function showMine(m) {
+  goDraw(m.me);
+  $("drawHello").textContent = `welcome back, ${m.me} 🎄`;
+  $("drawSub").textContent = "you already drew. forgot who? we don't judge (we do).";
+  $("drawSub").classList.remove("hidden");
+  $("openBtn").textContent = "🎁 remind me who i got";
+  $("openBtn").onclick = async () => {
+    $("openBtn").disabled = true;
+    const g = $("gift"); g.className = "gift shaking"; await sleep(900);
+    await playReveal(m.recipient, { fresh: true });
+  };
+  $("backBtn").classList.add("hidden");
+}
+
+/* ---------- admin ---------- */
+async function sha256(s) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+function openAdmin() {
+  showModal((c) => {
+    const inp = el("input", { type: "password", placeholder: "secret passcode", autocomplete: "off" });
+    const err = el("p", { className: "err", textContent: "" });
+    const go = async () => {
+      if ((await sha256(inp.value.trim())) !== CFG.adminPasscodeHash) { err.textContent = "nope. nice try, grinch."; return; }
+      showModal((c2) => {
+        c2.append(
+          el("div", { textContent: "🧨", style: "font-size:3rem" }),
+          el("h3", { textContent: "reset everything?" }),
+          el("p", { textContent: "this wipes every draw and everyone draws again. you still won't see who got who." }),
+        );
+        const row = el("div", { className: "row" });
+        row.append(
+          el("button", { className: "btn btn-ghost", textContent: "never mind", onclick: hideModal }),
+          el("button", { className: "btn btn-red", textContent: "yes, nuke it", onclick: async (e) => {
+            e.target.disabled = true; e.target.textContent = "Resetting…";
+            try { await store.reset(); saveMine(null); hideModal(); goWho(); }
+            catch { e.target.textContent = "Failed, try again"; e.target.disabled = false; }
+          } }),
+        );
+        c2.append(row);
+      });
+    };
+    inp.addEventListener("keydown", (e) => e.key === "Enter" && go());
+    c.append(
+      el("div", { textContent: "🔧", style: "font-size:3rem" }),
+      el("h3", { textContent: "santa's control room" }),
+      el("p", { textContent: "organizer only. elves, look away." }),
+      inp, err,
+      el("button", { className: "btn btn-green", textContent: "enter", onclick: go }),
+    );
+    setTimeout(() => inp.focus(), 50);
+  });
+}
+
+/* ---------- boot ---------- */
+async function boot() {
+  setTitle(); makeSnow(); NAMES.forEach(findFace); sound.init();
+  try { store = CFG.firebase ? await firebaseStore() : localStore(); }
+  catch (e) { console.error(e); store = localStore(); }
+  if (store.demo) $("demoBadge").classList.remove("hidden");
+
+  let first = true;
+  store.subscribe((s) => {
+    state = s || emptyState();
+    renderChecklist();
+    const m = mine();
+    const wasReset = m && m.round !== (state.round || 1);
+    if (wasReset) saveMine(null); // organizer reset
+    if (wasReset && !first && !busy) { goWho(); return; }
+    if (first) { first = false; const mm = mine(); if (mm) showMine(mm); else goWho(); return; }
+    if (!$("stepWho").classList.contains("hidden")) renderNameGrid();
+    // if a reset happened while someone was looking at their reveal
+    if (me && !busy && !(state.drawn || {})[me] && !$("revealText").classList.contains("hidden")) goWho();
+  });
+
+  $("replayBtn").onclick = async () => {
+    const m = mine(); if (!m) return;
+    resetGift(); $("gift").className = "gift shaking"; await sleep(800);
+    await playReveal(m.recipient, { fresh: false });
+  };
+  $("backBtn").onclick = goWho;
+  $("adminBtn").onclick = openAdmin;
+  $("sideToggle").onclick = () => {
+    const open = $("sideCard").classList.toggle("open");
+    $("sideToggle").setAttribute("aria-expanded", open);
+  };
+
+  $("enterBtn").onclick = () => {
+    $("adminBtn").classList.remove("hidden");
+    $("welcome").classList.add("leaving");
+    $("app").classList.remove("hidden");
+    setTimeout(() => $("welcome").remove(), 650);
+  };
+}
+boot();

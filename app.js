@@ -82,14 +82,6 @@ async function firebaseStore() {
 /* ============================================================
    COPY — the comedy department
    ============================================================ */
-const LOADING = [
-  "Consulting the elves' HR department…",
-  "Bribing Rudolph with carrots…",
-  "Shaking the box suspiciously…",
-  "Checking the list. Checking it twice…",
-  "Asking Mrs. Claus, she actually runs things…",
-  "Untangling the lights…",
-];
 const PAST_TAG = ["drew already ✓", "already sorted ✓", "done & dusted ✓"];
 
 /* ============================================================
@@ -357,16 +349,11 @@ async function openBox() {
   if (busy || !me) return;
   busy = true; $("openBtn").disabled = true; $("backBtn").classList.add("hidden");
   const g = $("gift"); g.className = "gift shaking";
-  let li = 0; const order = [...LOADING].sort(() => Math.random() - 0.5);
-  $("loadingLine").textContent = order[0];
-  const ticker = setInterval(() => { $("loadingLine").textContent = order[++li % order.length]; }, 900);
   try {
     const [res] = await Promise.all([store.draw(me), sleep(2200)]);
     saveMine({ me, recipient: res.recipient, round: res.round });
-    clearInterval(ticker);
     await playReveal(res.recipient, { fresh: true });
   } catch (err) {
-    clearInterval(ticker);
     g.className = "gift idle";
     $("openBtn").disabled = false; $("backBtn").classList.remove("hidden");
     $("loadingLine").textContent = "";

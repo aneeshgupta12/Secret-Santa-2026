@@ -165,8 +165,9 @@ const sound = (() => {
   function stopMusic() { song?.pause(); synthOn = false; clearTimeout(synthTimer); }
 
   // A wet, sputtering fart, synthesized on the spot (no file needed).
+  // Ignores the mute button on purpose: the mute only silences the music.
   function fart() {
-    if (muted || !ensureCtx()) return;
+    if (!ensureCtx()) return; // plays even when the music is muted
     const sr = ctx.sampleRate, dur = 1.15, n = Math.floor(sr * dur);
     const buf = ctx.createBuffer(1, n, sr), d = buf.getChannelData(0);
     const bursts = [[0, 0.3], [0.34, 0.52], [0.56, 1.12]];

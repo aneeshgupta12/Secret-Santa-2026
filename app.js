@@ -114,16 +114,16 @@ function avatar(name, size = "") {
 }
 
 /* ============================================================
-   SOUND — the song plays on the welcome screen only; the reveal
-   sound plays on every reveal, even if the song was muted.
+   SOUND — the song plays the whole time (starts on open where the
+   browser allows it); the reveal sound ignores the mute button.
    ============================================================ */
 const sound = (() => {
-  let muted = false, onHome = true, primed = false;
+  let muted = false, primed = false;
   const song = Object.assign(new Audio(CFG.customAudio), { loop: true, volume: 0.55, preload: "auto" });
   const sfx = Object.assign(new Audio(CFG.revealSound), { preload: "auto", volume: 1 });
 
   function playSong() {
-    if (muted || !onHome || !CFG.customAudio) return;
+    if (muted || !CFG.customAudio) return;
     if (song.paused) song.play().catch(() => {}); // blocked until the first tap on most phones
   }
   // Phones only let a page play sound after a tap. The reveal happens a few
@@ -137,18 +137,8 @@ const sound = (() => {
   function reveal() {
     if (!CFG.revealSound) return;
     try { sfx.pause(); sfx.currentTime = 0; sfx.muted = false; sfx.play().catch(() => {}); } catch {}
-  }
-  function leaveHome() {
-    onHome = false;
-    $("musicBtn").classList.add("hidden");
-    if (song.paused) return;
-    const start = song.volume, t0 = performance.now();
-    const step = (t) => {
-      const k = Math.min(1, (t - t0) / 700);
-      song.volume = start * (1 - k);
-      k < 1 ? requestAnimationFrame(step) : song.pause();
-    };
-    requestAnimationFrame(step);
+    // dip the song so the reveal sound is heard
+    if (!song.paused) { song.volume = 0.15; setTimeout(() => { song.volume = 0.55; }, 1500); }
   }
   function syncButton() {
     const b = $("musicBtn");
@@ -169,7 +159,6 @@ const sound = (() => {
       };
     },
     reveal,
-    leaveHome,
   };
 })();
 
@@ -454,7 +443,6 @@ async function boot() {
   };
 
   $("enterBtn").onclick = () => {
-    sound.leaveHome();
     $("adminBtn").classList.remove("hidden");
     $("welcome").classList.add("leaving");
     $("app").classList.remove("hidden");

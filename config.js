@@ -34,7 +34,7 @@ window.SANTA_CONFIG = {
   // SHA-256 hash of the admin reset passcode (default: grinch2026).
   adminPasscodeHash: "c1635f27378dcc417bfff3e34938b6d0fbb6151f3d5b8826111983b9611bdc00",
 
-  // Song that plays on the welcome screen (stops when people tap "Let me in").
+  // Background song: plays the whole time, starting when the site opens.
   customAudio: "audio/sleigh-ride.mp3",
 
   // Sound that plays when a name pops out of the box (ignores the mute button).
@@ -50,7 +50,7 @@ window.SANTA_CONFIG = {
     Eva: "Gift suggestion: a bu**et sized hole in Kam's head",
     Elissa: "dem legzzzzz",
     Emily: "Gift suggestion: a pre-written breakup text for Diego",
-    Silas: "Gift suggestion: a CS job offer in this economy",
+    Silas: "Our favorite he/they",
     Dayleigh: "She doesn't even go here!",
     Lucy: "Someone get her away from DBF for a little, please",
   },

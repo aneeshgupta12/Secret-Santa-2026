@@ -82,7 +82,6 @@ async function firebaseStore() {
 /* ============================================================
    COPY — the comedy department
    ============================================================ */
-const PAST_TAG = ["drew already ✓", "already sorted ✓", "done & dusted ✓"];
 
 /* ============================================================
    AVATARS — faces/<name>.png, then .jpg, then a cute fallback
@@ -236,7 +235,7 @@ function renderNameGrid() {
     const s = document.createElement("span"); s.className = "nm"; s.textContent = n; b.appendChild(s);
     if (drawn[n]) {
       b.disabled = true;
-      const t = document.createElement("span"); t.className = "tag"; t.textContent = PAST_TAG[i % 3]; b.appendChild(t);
+      const t = document.createElement("span"); t.className = "tag"; t.textContent = "Drew already ✓"; b.appendChild(t);
     }
     b.onclick = () => confirmMe(n);
     grid.appendChild(b);
